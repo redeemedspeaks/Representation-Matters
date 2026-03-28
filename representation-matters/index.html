@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Story World 🌙</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>🌈 Story World</h1>
+
+<div id="setup">
+  <h2>Tell me about you ✨</h2>
+
+  <input id="gender" placeholder="Gender (optional)">
+  <input id="ethnicity" placeholder="Ethnicity (optional)">
+  <input id="career" placeholder="Career interest (optional)">
+
+  <button onclick="saveProfile()">Save & Start</button>
+</div>
+
+<div id="app" style="display:none;">
+  <h2>✨ Your Story ✨</h2>
+
+  <button onclick="generateStory()">🎲 Get Story</button>
+  <button onclick="openProfile()">⚙️ Profile</button>
+
+  <div id="story"></div>
+
+  <h3>📚 Saved Stories</h3>
+  <div id="history"></div>
+</div>
+
+<!-- PROFILE -->
+<div id="profile" style="display:none;">
+  <h2>⚙️ Your Profile</h2>
+
+  <input id="editGender">
+  <input id="editEthnicity">
+  <input id="editCareer">
+
+  <button onclick="updateProfile()">Save Changes</button>
+  <button onclick="closeProfile()">Back</button>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
