@@ -1,0 +1,39 @@
+body {
+  font-family: "Comic Sans MS", cursive;
+  text-align: center;
+  background: linear-gradient(to bottom, #a1c4fd, #c2e9fb);
+  color: #333;
+}
+
+h1 {
+  font-size: 40px;
+}
+
+input {
+  padding: 10px;
+  margin: 5px;
+  border-radius: 10px;
+  border: none;
+}
+
+button {
+  padding: 12px 20px;
+  margin: 10px;
+  border-radius: 20px;
+  border: none;
+  background: #ff9a9e;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #fad0c4;
+}
+
+#story {
+  margin-top: 20px;
+  padding: 20px;
+  background: white;
+  border-radius: 15px;
+}
