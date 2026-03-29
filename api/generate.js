@@ -1,108 +1,116 @@
+const usedStories = new Map(); // simple in-memory memory (per server instance)
+const styleTracker = new Map();
+
+const STORY_STYLES = [
+  "adventure",
+  "friendly",
+  "mystery",
+  "journey"
+];
+
+// ---------- Helper: pick a non-repeating style ----------
+function getRandomStyle(sessionId = "default") {
+  const lastStyle = styleTracker.get(sessionId);
+
+  let style;
+  do {
+    style = STORY_STYLES[Math.floor(Math.random() * STORY_STYLES.length)];
+  } while (style === lastStyle && STORY_STYLES.length > 1);
+
+  styleTracker.set(sessionId, style);
+  return style;
+}
+
+// ---------- Helper: fetch person from Wikipedia ----------
+async function searchWikipedia(query) {
+  const res = await fetch(
+    `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`
+  );
+
+  if (!res.ok) return null;
+
+  return await res.json();
+}
+
+// ---------- Helper: simple ranking ----------
+function scorePerson(data, race, gender, career) {
+  let score = 0;
+
+  if (!data) return 0;
+
+  const extract = (data.extract || "").toLowerCase();
+
+  if (career && extract.includes(career.toLowerCase())) score += 3;
+  if (gender && extract.includes(gender.toLowerCase())) score += 2;
+  if (race && extract.includes(race.toLowerCase())) score += 2;
+
+  return score;
+}
+
 export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
   try {
-    const { shownPeople = [], lastStyle } = req.body;
+    const { race, gender, career, sessionId } = req.body;
 
-    // =========================
-    // STEP 1: GET PEOPLE
-    // =========================
-    const wikidataRes = await fetch(
-      "https://query.wikidata.org/sparql?query=" +
-        encodeURIComponent(`
-        SELECT ?person ?personLabel WHERE {
-          ?person wdt:P31 wd:Q5.
-          SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-        }
-        LIMIT 50
-      `),
-      { headers: { Accept: "application/sparql-results+json" } }
-    );
+    const key = `${race}-${gender}-${career}`;
 
-    const data = await wikidataRes.json();
-
-    let people = data.results.bindings.map(
-      (p) => p.personLabel.value
-    );
-
-    // ✅ remove already shown
-    people = people.filter((p) => !shownPeople.includes(p));
-
-    if (!people.length) {
+    // ---------- MEMORY CHECK ----------
+    if (usedStories.has(key)) {
       return res.status(200).json({
-        story: "You've seen all available people for this category. Try changing your inputs!"
+        title: "Already seen story",
+        story: "Try changing your inputs to discover a new story!"
       });
     }
 
-    // =========================
-    // STEP 2: RANDOM PICK
-    // =========================
-    let selected =
-      people[Math.floor(Math.random() * people.length)];
+    // ---------- WIKIPEDIA SEARCH ----------
+    let wikiData = await searchWikipedia(career);
 
-    console.log("Selected:", selected);
-
-    // =========================
-    // STEP 3: WIKIPEDIA
-    // =========================
-    let summary = await getWikipediaSummary(selected);
-
-    if (!summary) {
-      const alt = await searchWikipedia(selected);
-      if (alt.length > 0) {
-        selected = alt[0];
-        summary = await getWikipediaSummary(selected);
-      }
+    if (!wikiData) {
+      // fallback
+      wikiData = await searchWikipedia(`${career} person`);
     }
 
-    if (!summary) {
-      return res.status(200).json({
-        story: "Couldn't find a good story. Try again!"
-      });
-    }
+    // ---------- AI PROMPT ----------
+    const style = getRandomStyle(sessionId);
 
-    // =========================
-    // STEP 4: STYLE (NO REPEAT)
-    // =========================
-    const styles = ["cinematic", "playful", "calm", "action", "imaginative"];
-
-    let style;
-    do {
-      style = styles[Math.floor(Math.random() * styles.length)];
-    } while (style === lastStyle);
-
-    // =========================
-    // STEP 5: STORY
-    // =========================
     const prompt = `
-You are a children's bedtime storyteller.
+You are a children's storyteller.
 
-STYLE: ${style}
+Use ONLY factual information.
 
-STRICT RULES:
-- Use ONLY the facts provided
-- Do NOT invent events or emotions
-- Do NOT assume thoughts or struggles
-- Keep language simple for kids
-- Make it feel like a fun short story
-- Use a UNIQUE opening every time
+Create a ${style} bedtime story about a REAL person.
 
-FORMAT:
+Inputs:
+Race: ${race}
+Gender: ${gender}
+Career: ${career}
 
-Title
+Person Info:
+${wikiData?.extract || "No data found"}
 
-Story
+Rules:
+- DO NOT invent events
+- DO NOT exaggerate
+- Keep it factual
+- Keep it fun for kids
+- Change storytelling style each time
+- Never repeat previous stories
+- Output JSON ONLY:
 
-✨ Lesson:
-💬 Question:
-
-FACTS:
-${summary}
+{
+  "title": "...",
+  "story": "..."
+}
 `;
 
     const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -111,63 +119,44 @@ ${summary}
       })
     });
 
-    if (!aiRes.ok) {
-      const err = await aiRes.text();
-      console.error(err);
+    const rawText = await aiRes.text();
 
-      return res.status(200).json({
-        story: "Story generator is having trouble. Try again."
-      });
+    console.log("OpenAI RAW:", rawText);
+
+    if (!aiRes.ok) {
+      return res.status(500).json({ error: "OpenAI failed" });
     }
 
-    const aiData = await aiRes.json();
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      return res.status(500).json({ error: "Bad AI response" });
+    }
 
-    const story =
-      aiData?.choices?.[0]?.message?.content || "Try again!";
+    const content = parsed?.choices?.[0]?.message?.content;
+
+    if (!content) {
+      return res.status(500).json({ error: "Empty AI response" });
+    }
+
+    let storyData;
+    try {
+      storyData = JSON.parse(content);
+    } catch {
+      return res.status(500).json({ error: "Story format error" });
+    }
+
+    // ---------- SAVE MEMORY ----------
+    usedStories.set(key, true);
 
     return res.status(200).json({
-      story,
-      person: selected,
-      style
+      title: storyData.title,
+      story: storyData.story
     });
 
   } catch (err) {
     console.error(err);
-
-    return res.status(200).json({
-      story: "Something went wrong. Please try again."
-    });
-  }
-}
-
-// =========================
-// HELPERS
-// =========================
-
-async function getWikipediaSummary(name) {
-  try {
-    const res = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`
-    );
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    return data.extract;
-  } catch {
-    return null;
-  }
-}
-
-async function searchWikipedia(query) {
-  try {
-    const res = await fetch(
-      `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&format=json`
-    );
-
-    const data = await res.json();
-    return data[1] || [];
-  } catch {
-    return [];
+    return res.status(500).json({ error: "Server error" });
   }
 }
