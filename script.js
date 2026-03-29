@@ -1,26 +1,11 @@
-function saveProfile() {
+async function generateStory() {
   const race = document.getElementById("race").value;
   const gender = document.getElementById("gender").value;
   const career = document.getElementById("career").value;
 
-  localStorage.setItem("profile", JSON.stringify({ race, gender, career }));
+  const output = document.getElementById("output");
 
-  document.getElementById("setup").style.display = "none";
-  document.getElementById("app").style.display = "block";
-}
-
-// 🔑 create unique key per category combo
-function getCategoryKey(profile) {
-  return `shown_${(profile.race || "any")}_${(profile.gender || "any")}_${(profile.career || "any")}`;
-}
-
-async function generateStory() {
-  const profile = JSON.parse(localStorage.getItem("profile") || "{}");
-
-  const key = getCategoryKey(profile);
-
-  let shownPeople = JSON.parse(localStorage.getItem(key) || "[]");
-  let lastStyle = localStorage.getItem("lastStyle");
+  output.innerHTML = "Generating...";
 
   try {
     const res = await fetch("/api/generate", {
@@ -29,32 +14,38 @@ async function generateStory() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        race: profile.race,
-        gender: profile.gender,
-        career: profile.career,
-        shownPeople,
-        lastStyle
+        race,
+        gender,
+        career,
+        sessionId: "user-session-1"
       })
     });
 
-    const data = await res.json();
+    const text = await res.text();
 
-    document.getElementById("story").innerText =
-      data.story || "No story returned.";
+    console.log("RAW RESPONSE:", text);
 
-    // ✅ Save per-category (THIS IS THE KEY FEATURE)
-    if (data.person) {
-      shownPeople.push(data.person);
-      localStorage.setItem(key, JSON.stringify(shownPeople));
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      output.innerHTML = "Invalid response from server.";
+      return;
     }
 
-    if (data.style) {
-      localStorage.setItem("lastStyle", data.style);
+    if (!res.ok) {
+      output.innerHTML = data.error || "Error occurred";
+      return;
     }
+
+    output.innerHTML = `
+      <h2>${data.title}</h2>
+      <p>${data.story}</p>
+    `;
 
   } catch (err) {
     console.error(err);
-    document.getElementById("story").innerText =
-      "Something went wrong. Try again.";
+    output.innerHTML = "Network error.";
   }
 }
