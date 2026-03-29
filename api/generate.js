@@ -1,56 +1,85 @@
 export default async function handler(req, res) {
-  const { query } = req.body;
-
   try {
+    const { query } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: "No input provided" });
+    }
+
     const person = await findSafePerson(query);
 
     if (!person) {
       return res.status(404).json({
-        error: "No safe, valid person found. Try different words."
+        error: "No safe match found. Try different words."
       });
     }
 
     const story = await generateStory(person);
 
-    res.status(200).json({ story });
+    return res.status(200).json({ story });
 
   } catch (err) {
-    res.status(500).json({ error: "Server error." });
+    console.error("GLOBAL ERROR:", err);
+
+    return res.status(500).json({
+      error: "Server error. Check logs."
+    });
   }
 }
 
 //////////////////////////
-// SEARCH PIPELINE
+// MAIN SEARCH FUNCTION
 //////////////////////////
 
 async function findSafePerson(query) {
-  const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
 
-  const res = await fetch(url);
-  const data = await res.json();
+    const res = await fetch(url);
 
-  for (let result of data.query.search.slice(0, 5)) {
-    const title = result.title;
+    if (!res.ok) return null;
 
-    if (isBadTitle(title)) continue;
+    const data = await res.json();
 
-    const page = await getSummary(title);
-    if (!page) continue;
+    if (!data || !data.query || !Array.isArray(data.query.search)) {
+      return null;
+    }
 
-    if (!isPerson(page)) continue;
-    if (isUnsafe(page.extract)) continue;
+    const results = data.query.search;
 
-    return {
-      name: page.title,
-      text: page.extract
-    };
+    for (let i = 0; i < Math.min(5, results.length); i++) {
+      const result = results[i];
+
+      if (!result || !result.title) continue;
+
+      const title = result.title;
+
+      if (isBadTitle(title)) continue;
+
+      const page = await getSummary(title);
+
+      if (!page || !page.extract) continue;
+
+      if (!isPerson(page)) continue;
+
+      if (isUnsafe(page.extract)) continue;
+
+      return {
+        name: page.title,
+        text: page.extract
+      };
+    }
+
+    return null;
+
+  } catch (err) {
+    console.error("findSafePerson error:", err);
+    return null;
   }
-
-  return null;
 }
 
 //////////////////////////
-// FILTERS
+// FILTER FUNCTIONS
 //////////////////////////
 
 function isBadTitle(title) {
@@ -65,12 +94,13 @@ function isBadTitle(title) {
 }
 
 function isPerson(page) {
-  if (!page.extract) return false;
+  if (!page || !page.extract) return false;
 
   const text = page.extract.toLowerCase();
 
   return (
     text.includes("born") ||
+    text.includes("was born") ||
     text.includes("is a") ||
     text.includes("was a") ||
     text.includes("actor") ||
@@ -80,6 +110,8 @@ function isPerson(page) {
 }
 
 function isUnsafe(text) {
+  if (!text) return false;
+
   const lower = text.toLowerCase();
 
   const banned = [
@@ -87,8 +119,9 @@ function isUnsafe(text) {
     "adult",
     "xxx",
     "onlyfans",
+    "sex",
     "erotic",
-    "sex"
+    "nude"
   ];
 
   return banned.some(word => lower.includes(word));
@@ -99,13 +132,23 @@ function isUnsafe(text) {
 //////////////////////////
 
 async function getSummary(title) {
-  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+  try {
+    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
 
-  const res = await fetch(url);
+    const res = await fetch(url);
 
-  if (!res.ok) return null;
+    if (!res.ok) return null;
 
-  return await res.json();
+    const data = await res.json();
+
+    if (!data || !data.extract) return null;
+
+    return data;
+
+  } catch (err) {
+    console.error("getSummary error:", err);
+    return null;
+  }
 }
 
 //////////////////////////
@@ -123,10 +166,10 @@ async function generateStory(person) {
 
   const titles = [
     `${name} Found a Way`,
-    `${name} and the Big Idea`,
+    `${name} and the Big Dream`,
     `${name} Kept Going`,
     `${name} Changed Things`,
-    `${name} and the Journey`
+    `${name} Made It Happen`
   ];
 
   const title = titles[Math.floor(Math.random() * titles.length)];
@@ -134,11 +177,11 @@ async function generateStory(person) {
   return `
 🌙 Story: “${title}”
 
-${name} had something inside them.
+${name} had a dream.
 
 ${sentences.join(".\n")}
 
-They kept trying.
+They kept going.
 They kept learning.
 They didn’t give up.
 
