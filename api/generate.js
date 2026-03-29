@@ -2,87 +2,147 @@ export default async function handler(req, res) {
   const { query } = req.body;
 
   try {
-    const person = await getPerson(query);
+    const person = await findSafePerson(query);
 
-    const story = createStory(person);
+    if (!person) {
+      return res.status(404).json({
+        error: "No safe, valid person found. Try different words."
+      });
+    }
+
+    const story = await generateStory(person);
 
     res.status(200).json({ story });
 
   } catch (err) {
-    res.status(500).json({ error: "Failed to generate story" });
+    res.status(500).json({ error: "Server error." });
   }
 }
 
-async function getPerson(query) {
-  const search = await fetch(
-    `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`
-  );
+//////////////////////////
+// SEARCH PIPELINE
+//////////////////////////
 
-  const data = await search.json();
+async function findSafePerson(query) {
+  const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
 
-  const title = data.query.search[0].title;
+  const res = await fetch(url);
+  const data = await res.json();
 
-  const summaryRes = await fetch(
-    `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
-  );
+  for (let result of data.query.search.slice(0, 5)) {
+    const title = result.title;
 
-  const summary = await summaryRes.json();
+    if (isBadTitle(title)) continue;
 
-  return {
-    name: summary.title,
-    summary: summary.extract
-  };
+    const page = await getSummary(title);
+    if (!page) continue;
+
+    if (!isPerson(page)) continue;
+    if (isUnsafe(page.extract)) continue;
+
+    return {
+      name: page.title,
+      text: page.extract
+    };
+  }
+
+  return null;
 }
 
-function createStory(person) {
-  const name = person.name;
+//////////////////////////
+// FILTERS
+//////////////////////////
 
-  const opening = [
-    "liked to create things",
-    "worked hard every day",
-    "followed their dream",
-    "loved learning"
+function isBadTitle(title) {
+  const t = title.toLowerCase();
+
+  return (
+    t.includes("list of") ||
+    t.includes("category") ||
+    t.includes("index") ||
+    t.includes("disambiguation")
+  );
+}
+
+function isPerson(page) {
+  if (!page.extract) return false;
+
+  const text = page.extract.toLowerCase();
+
+  return (
+    text.includes("born") ||
+    text.includes("is a") ||
+    text.includes("was a") ||
+    text.includes("actor") ||
+    text.includes("singer") ||
+    text.includes("artist")
+  );
+}
+
+function isUnsafe(text) {
+  const lower = text.toLowerCase();
+
+  const banned = [
+    "porn",
+    "adult",
+    "xxx",
+    "onlyfans",
+    "erotic",
+    "sex"
   ];
 
-  const middle = [
-    "So they kept going.",
-    "So they tried again.",
-    "So they built something new.",
-    "So they didn’t give up."
+  return banned.some(word => lower.includes(word));
+}
+
+//////////////////////////
+// WIKIPEDIA FETCH
+//////////////////////////
+
+async function getSummary(title) {
+  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+
+  const res = await fetch(url);
+
+  if (!res.ok) return null;
+
+  return await res.json();
+}
+
+//////////////////////////
+// STORY GENERATION
+//////////////////////////
+
+async function generateStory(person) {
+  const { name, text } = person;
+
+  const sentences = text
+    .split(".")
+    .map(s => s.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const titles = [
+    `${name} Found a Way`,
+    `${name} and the Big Idea`,
+    `${name} Kept Going`,
+    `${name} Changed Things`,
+    `${name} and the Journey`
   ];
 
-  const lessons = [
-    "You can solve problems around you.",
-    "You can keep going even when it’s hard.",
-    "You can build something great.",
-    "You can grow into something powerful."
-  ];
-
-  const questions = [
-    "What is something you want to create?",
-    "What is a problem you would like to solve?",
-    "What is your big dream?",
-    "How can you help someone today?"
-  ];
-
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-  const summary = person.summary
-    ? person.summary.split(".").slice(0, 2).join(".")
-    : "";
+  const title = titles[Math.floor(Math.random() * titles.length)];
 
   return `
-🌙 “${name}”
+🌙 Story: “${title}”
 
-${name} ${pick(opening)}.
+${name} had something inside them.
 
-${summary}.
+${sentences.join(".\n")}
 
-${pick(middle)}
+They kept trying.
+They kept learning.
+They didn’t give up.
 
-${name} showed that you can grow, learn, and create something meaningful.
-
-✨ Lesson: ${pick(lessons)}
-💬 Question: ${pick(questions)}
+✨ Lesson: You can do big things too.
+💬 Question: What is something you want to try?
 `.trim();
 }
