@@ -1,59 +1,46 @@
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-function buildCategory({ race, gender, career }) {
-  return [race, gender, career].filter(Boolean).join(" ").trim();
-}
-
-const SYSTEM_PROMPT = `
-You create fun, short, child-friendly bedtime stories about REAL people.
-
-RULES:
-- Only choose real, safe, positive people
-- Match the category exactly (race, gender, career)
-- Do NOT use explicit, adult, or unsafe people
-- Do NOT invent false facts
-- Keep language very simple (kids age 3–7)
-
-FORMAT:
-Title
-
-Story (short, natural, NOT formulaic)
-
-Lesson 🌟
-(one sentence)
-
-Question 🤔
-(one simple question)
-`;
-
 export default async function handler(req, res) {
   try {
     const { race, gender, career } = req.body;
 
-    const category = buildCategory({ race, gender, career });
+    const category = [race, gender, career].filter(Boolean).join(" ");
 
     if (!category) {
       return res.status(400).json({ error: "Missing input" });
     }
 
-    const response = await client.chat.completions.create({
-      model: "gpt-5.3",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: `Category: ${category}. Create a story.`,
-        },
-      ],
-      temperature: 0.9,
-      max_tokens: 400,
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `
+You create short, child-friendly bedtime stories about REAL people.
+
+- Choose a real person matching the category
+- Keep it simple, fun, and safe
+- Do not include adult or unsafe content
+- 4–7 sentences max
+            `,
+          },
+          {
+            role: "user",
+            content: `Category: ${category}. Create a story.`,
+          },
+        ],
+        temperature: 0.9,
+        max_tokens: 400,
+      }),
     });
 
-    const story = response.choices?.[0]?.message?.content;
+    const data = await response.json();
+
+    const story = data.choices?.[0]?.message?.content;
 
     if (!story) {
       throw new Error("No story returned");
@@ -65,7 +52,7 @@ export default async function handler(req, res) {
     console.error(error);
 
     res.status(500).json({
-      error: "Server error. Check logs.",
+      error: "Server error",
     });
   }
 }
