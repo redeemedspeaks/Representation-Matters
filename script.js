@@ -9,56 +9,52 @@ function saveProfile() {
   document.getElementById("app").style.display = "block";
 }
 
+// 🔑 create unique key per category combo
+function getCategoryKey(profile) {
+  return `shown_${(profile.race || "any")}_${(profile.gender || "any")}_${(profile.career || "any")}`;
+}
+
 async function generateStory() {
   const profile = JSON.parse(localStorage.getItem("profile") || "{}");
 
-  let shownPeople = JSON.parse(localStorage.getItem("shownPeople") || "[]");
+  const key = getCategoryKey(profile);
+
+  let shownPeople = JSON.parse(localStorage.getItem(key) || "[]");
   let lastStyle = localStorage.getItem("lastStyle");
 
-  const res = await fetch("/api/generate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      race: profile.race,
-      gender: profile.gender,
-      career: profile.career,
-      shownPeople,
-      lastStyle
-    })
-  });
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        race: profile.race,
+        gender: profile.gender,
+        career: profile.career,
+        shownPeople,
+        lastStyle
+      })
+    });
 
-  const data = await res.json();
+    const data = await res.json();
 
-  document.getElementById("story").innerText = data.story;
+    document.getElementById("story").innerText =
+      data.story || "No story returned.";
 
-  if (data.person) {
-    shownPeople.push(data.person);
-    localStorage.setItem("shownPeople", JSON.stringify(shownPeople));
+    // ✅ Save per-category (THIS IS THE KEY FEATURE)
+    if (data.person) {
+      shownPeople.push(data.person);
+      localStorage.setItem(key, JSON.stringify(shownPeople));
+    }
+
+    if (data.style) {
+      localStorage.setItem("lastStyle", data.style);
+    }
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById("story").innerText =
+      "Something went wrong. Try again.";
   }
-
-  if (data.style) {
-    localStorage.setItem("lastStyle", data.style);
-  }
-
-  saveStory(data.story);
 }
-
-function saveStory(story) {
-  const history = JSON.parse(localStorage.getItem("history") || "[]");
-  history.push(story);
-
-  localStorage.setItem("history", JSON.stringify(history));
-  renderHistory();
-}
-
-function renderHistory() {
-  const history = JSON.parse(localStorage.getItem("history") || "[]");
-
-  document.getElementById("history").innerHTML = history
-    .map(s => `<p>${s}</p>`)
-    .join("");
-}
-
-renderHistory();
