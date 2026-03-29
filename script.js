@@ -3,7 +3,7 @@ async function generateStory() {
   const output = document.getElementById("output");
 
   if (!input) {
-    output.textContent = "Please enter something like: black female actor";
+    output.textContent = "Enter something like: black male actor";
     return;
   }
 
@@ -15,7 +15,11 @@ async function generateStory() {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ query: input })
+      body: JSON.stringify({
+        race: extractRace(input),
+        gender: extractGender(input),
+        career: extractCareer(input)
+      })
     });
 
     const data = await res.json();
@@ -29,4 +33,38 @@ async function generateStory() {
   } catch (err) {
     output.textContent = "Something went wrong.";
   }
+}
+
+/**
+ * Simple parsing helpers
+ */
+function extractRace(text) {
+  const lower = text.toLowerCase();
+
+  if (lower.includes("black")) return "black";
+  if (lower.includes("latino") || lower.includes("hispanic")) return "latino";
+  if (lower.includes("white")) return "white";
+  if (lower.includes("asian")) return "asian";
+
+  return "";
+}
+
+function extractGender(text) {
+  const lower = text.toLowerCase();
+
+  if (lower.includes("male")) return "male";
+  if (lower.includes("female")) return "female";
+
+  return "";
+}
+
+function extractCareer(text) {
+  const lower = text.toLowerCase();
+
+  if (lower.includes("actor")) return "actor";
+  if (lower.includes("youtuber")) return "youtuber";
+  if (lower.includes("singer")) return "singer";
+  if (lower.includes("athlete")) return "athlete";
+
+  return text; // fallback
 }
