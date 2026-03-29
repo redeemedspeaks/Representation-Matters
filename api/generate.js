@@ -1,28 +1,20 @@
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
   try {
-    const { race, gender, career, shownPeople = [], lastStyle } = req.body;
+    const { shownPeople = [], lastStyle } = req.body;
 
     // =========================
     // STEP 1: GET PEOPLE
     // =========================
-    const sparql = `
-      SELECT ?person ?personLabel WHERE {
-        ?person wdt:P31 wd:Q5.
-        SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-      }
-      LIMIT 100
-    `;
-
     const wikidataRes = await fetch(
       "https://query.wikidata.org/sparql?query=" +
-        encodeURIComponent(sparql),
-      {
-        headers: { Accept: "application/sparql-results+json" }
-      }
+        encodeURIComponent(`
+        SELECT ?person ?personLabel WHERE {
+          ?person wdt:P31 wd:Q5.
+          SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+        }
+        LIMIT 50
+      `),
+      { headers: { Accept: "application/sparql-results+json" } }
     );
 
     const data = await wikidataRes.json();
@@ -31,55 +23,25 @@ export default async function handler(req, res) {
       (p) => p.personLabel.value
     );
 
-    // Remove duplicates already shown
+    // ✅ remove already shown
     people = people.filter((p) => !shownPeople.includes(p));
 
     if (!people.length) {
       return res.status(200).json({
-        story: "No new people found. Try resetting history."
+        story: "You've seen all available people for this category. Try changing your inputs!"
       });
     }
 
     // =========================
-    // STEP 2: SMART RANKING
+    // STEP 2: RANDOM PICK
     // =========================
-    const rankingPrompt = `
-User:
-Race: ${race || "any"}
-Gender: ${gender || "any"}
-Career: ${career || "any"}
+    let selected =
+      people[Math.floor(Math.random() * people.length)];
 
-Rank the BEST match.
-
-Return JSON:
-{ "person": "name" }
-
-People:
-${people.slice(0, 20).join("\n")}
-`;
-
-    const rankRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: rankingPrompt }],
-        temperature: 0.3
-      })
-    });
-
-    const rankData = await rankRes.json();
-
-    let selected = people[0];
-    try {
-      selected = JSON.parse(rankData.choices[0].message.content).person;
-    } catch {}
+    console.log("Selected:", selected);
 
     // =========================
-    // STEP 3: WIKIPEDIA FETCH
+    // STEP 3: WIKIPEDIA
     // =========================
     let summary = await getWikipediaSummary(selected);
 
@@ -93,12 +55,12 @@ ${people.slice(0, 20).join("\n")}
 
     if (!summary) {
       return res.status(200).json({
-        story: "Couldn't find a valid story."
+        story: "Couldn't find a good story. Try again!"
       });
     }
 
     // =========================
-    // STEP 4: STYLE RANDOMIZER
+    // STEP 4: STYLE (NO REPEAT)
     // =========================
     const styles = ["cinematic", "playful", "calm", "action", "imaginative"];
 
@@ -108,7 +70,7 @@ ${people.slice(0, 20).join("\n")}
     } while (style === lastStyle);
 
     // =========================
-    // STEP 5: STORY GENERATION
+    // STEP 5: STORY
     // =========================
     const prompt = `
 You are a children's bedtime storyteller.
@@ -120,11 +82,8 @@ STRICT RULES:
 - Do NOT invent events or emotions
 - Do NOT assume thoughts or struggles
 - Keep language simple for kids
-
-STORY RULES:
-- Start with a UNIQUE opening (no repetition)
-- Make it feel like a short story
-- Fun and engaging tone
+- Make it feel like a fun short story
+- Use a UNIQUE opening every time
 
 FORMAT:
 
@@ -152,12 +111,21 @@ ${summary}
       })
     });
 
+    if (!aiRes.ok) {
+      const err = await aiRes.text();
+      console.error(err);
+
+      return res.status(200).json({
+        story: "Story generator is having trouble. Try again."
+      });
+    }
+
     const aiData = await aiRes.json();
 
     const story =
-      aiData.choices?.[0]?.message?.content || "Try again!";
+      aiData?.choices?.[0]?.message?.content || "Try again!";
 
-    res.status(200).json({
+    return res.status(200).json({
       story,
       person: selected,
       style
@@ -165,7 +133,10 @@ ${summary}
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Server error" });
+
+    return res.status(200).json({
+      story: "Something went wrong. Please try again."
+    });
   }
 }
 
@@ -178,7 +149,9 @@ async function getWikipediaSummary(name) {
     const res = await fetch(
       `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`
     );
+
     if (!res.ok) return null;
+
     const data = await res.json();
     return data.extract;
   } catch {
@@ -191,6 +164,7 @@ async function searchWikipedia(query) {
     const res = await fetch(
       `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=5&format=json`
     );
+
     const data = await res.json();
     return data[1] || [];
   } catch {
