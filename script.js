@@ -1,5 +1,3 @@
-// script.js
-
 function getUsedPeople() {
   return JSON.parse(localStorage.getItem("usedPeople")) || [];
 }
