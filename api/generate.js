@@ -1,17 +1,26 @@
 export default async function handler(req, res) {
-  // Only allow POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const { race, gender, career } = req.body || {};
+    const { race, gender, career, usedPeople = [] } = req.body || {};
 
     if (!race && !gender && !career) {
       return res.status(400).json({ error: "Missing input" });
     }
 
     const category = [race, gender, career].filter(Boolean).join(" ");
+
+    const styles = [
+      "calm and gentle",
+      "exciting and energetic",
+      "playful and rhythmic",
+      "mysterious and soft",
+      "inspiring and bold"
+    ];
+
+    const randomStyle = styles[Math.floor(Math.random() * styles.length)];
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -21,7 +30,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0.6,
+        temperature: 0.8,
         max_tokens: 250,
         messages: [
           {
@@ -30,37 +39,36 @@ export default async function handler(req, res) {
 You are a storytelling assistant for a children's bedtime app.
 
 ========================
-SAFETY RULES (STRICT)
+SAFETY RULES
 ========================
-- ONLY choose real people who are safe for children
-- MUST be appropriate for "safe search"
-- NEVER include:
-  - Criminals (violent or non-violent)
-  - Pornography or adult content creators
-  - OnlyFans or explicit entertainers
-  - People known for harmful or controversial behavior
-- If unsure, choose a widely respected, kid-safe role model
+- ONLY real, safe, well-known public figures
+- NO criminals, violence, or explicit content
+- If unsure, choose a universally safe role model
 
 ========================
-FACT RULES (PRIORITY)
+ANTI-REPEAT RULE
 ========================
-- ALL information must be true and widely known
-- Do NOT make up thoughts, emotions, or internal feelings
-- Do NOT exaggerate or invent events
-- Keep facts simple and accurate
+Do NOT use any of these people:
+${usedPeople.join(", ") || "None"}
 
 ========================
-STORY STYLE RULES
+FACT RULE
 ========================
-- VERY SHORT (3–5 sentences total)
-- Simple language (ages 3–7)
-- Bedtime tone: calm, warm, a little magical
-- Start with a creative, cozy, or exciting opening
-- Add light imagination words (lights, sky, cozy, etc.)
-- DO NOT add fake details
+- ONLY true, widely known facts
+- NO invented events or emotions
+- Keep everything accurate
 
 ========================
-FORMAT (STRICT)
+STORY STYLE
+========================
+- 3–5 short sentences
+- Ages 3–7
+- Tone: ${randomStyle}
+- Warm, simple, and bedtime-friendly
+- NO made-up details
+
+========================
+FORMAT
 ========================
 Title
 
@@ -70,13 +78,12 @@ Lesson 🌟
 (1 short sentence)
 
 Question 🤔
-(1 simple question)
+(1 short question)
 
 ========================
 GOAL
 ========================
-Make the story feel like a short, fun bedtime story,
-while keeping everything TRUE and SAFE.
+A safe, TRUE, fun bedtime story.
             `,
           },
           {
@@ -94,29 +101,19 @@ while keeping everything TRUE and SAFE.
     }
 
     const data = await response.json();
-    let story = data.choices?.[0]?.message?.content;
+    const story = data.choices?.[0]?.message?.content;
 
     if (!story) {
       return res.status(500).json({ error: "No story generated" });
     }
 
-    // 🔒 EXTRA SAFETY FILTER (backup protection)
-    const unsafeWords = [
-      "porn",
-      "sex",
-      "onlyfans",
-      "rape",
-      "kill",
-      "murder",
-      "explicit"
-    ];
+    // Safety filter
+    const unsafeWords = ["porn", "sex", "onlyfans", "rape", "kill", "murder", "explicit"];
 
     const lower = story.toLowerCase();
 
     if (unsafeWords.some(word => lower.includes(word))) {
-      return res.status(500).json({
-        error: "Unsafe content blocked",
-      });
+      return res.status(500).json({ error: "Unsafe content blocked" });
     }
 
     res.status(200).json({ story });
