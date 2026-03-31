@@ -3,11 +3,11 @@ async function generateStory() {
   const output = document.getElementById("output");
 
   if (!input) {
-    output.textContent = "Enter something like: black male actor";
+    output.textContent = "Try: Black female inventor";
     return;
   }
 
-  output.textContent = "Loading...";
+  output.textContent = "Loading... 🌙";
 
   try {
     const res = await fetch("/api/generate", {
@@ -15,56 +15,45 @@ async function generateStory() {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        race: extractRace(input),
-        gender: extractGender(input),
-        career: extractCareer(input)
-      })
+      body: JSON.stringify(parseInput(input))
     });
+
+    if (!res.ok) {
+      throw new Error("API error");
+    }
 
     const data = await res.json();
 
     if (data.error) {
       output.textContent = data.error;
-    } else {
-      output.textContent = data.story;
+      return;
     }
 
+    output.textContent = data.story;
+
   } catch (err) {
-    output.textContent = "Something went wrong.";
+    console.error(err);
+    output.textContent = "Something went wrong. Try again.";
   }
 }
 
 /**
- * Simple parsing helpers
+ * Flexible parser (keeps your "type anything" feature)
  */
-function extractRace(text) {
+function parseInput(text) {
   const lower = text.toLowerCase();
 
-  if (lower.includes("black")) return "black";
-  if (lower.includes("latino") || lower.includes("hispanic")) return "latino";
-  if (lower.includes("white")) return "white";
-  if (lower.includes("asian")) return "asian";
+  let race = "";
+  let gender = "";
+  let career = text;
 
-  return "";
-}
+  if (lower.includes("black")) race = "black";
+  else if (lower.includes("latino") || lower.includes("hispanic")) race = "latino";
+  else if (lower.includes("white")) race = "white";
+  else if (lower.includes("asian")) race = "asian";
 
-function extractGender(text) {
-  const lower = text.toLowerCase();
+  if (lower.includes("male") || lower.includes("man")) gender = "male";
+  else if (lower.includes("female") || lower.includes("woman")) gender = "female";
 
-  if (lower.includes("male")) return "male";
-  if (lower.includes("female")) return "female";
-
-  return "";
-}
-
-function extractCareer(text) {
-  const lower = text.toLowerCase();
-
-  if (lower.includes("actor")) return "actor";
-  if (lower.includes("youtuber")) return "youtuber";
-  if (lower.includes("singer")) return "singer";
-  if (lower.includes("athlete")) return "athlete";
-
-  return text; // fallback
+  return { race, gender, career };
 }
