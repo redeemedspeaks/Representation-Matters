@@ -44,7 +44,6 @@ Title
 
     const userPrompt = `Categories: ${categoryDesc}. Pick a real person who matches. Write a short magical story.`;
 
-    // --- OpenAI API Call ---
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       res.status(500).json({ error: "OpenAI API key not set." });
@@ -58,7 +57,7 @@ Title
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o", // Can use gpt-4o, gpt-4, gpt-3.5-turbo, depending on availability/cost
+        model: "gpt-4o",
         temperature: 0.85,
         max_tokens: 340,
         messages: [
@@ -83,4 +82,20 @@ Title
       return;
     }
 
-    // Safety filter (very basic, you
+    const unsafeWords = [
+      "porn", "sex", "onlyfans", "rape", "kill", "murder", "explicit", "suicide", 
+      "drugs", "alcohol", "crime", "jail", "prison"
+    ];
+    const lower = story.toLowerCase();
+    if (unsafeWords.some(word => lower.includes(word))) {
+      res.status(500).json({ error: "Unsafe content blocked" });
+      return;
+    }
+
+    res.status(200).json({ story });
+
+  } catch (error) {
+    console.error("Server error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+}
